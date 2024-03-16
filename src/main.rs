@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, routing::{get, post}, Json, Router};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 use time::{macros::date, Date};
 
@@ -31,7 +31,7 @@ pub struct NewPerson {
     pub stack: Option<Vec<String>>,
 }
 
-type AppState = Arc<Mutex<HashMap<Uuid, Person>>>;
+type AppState = Arc<RwLock<HashMap<Uuid, Person>>>;
 
 #[tokio::main]
 async fn main() {
@@ -49,7 +49,7 @@ async fn main() {
 
     people.insert(person.id, person);
 
-    let app_state = Arc::new(Mutex::new(people));
+    let app_state = Arc::new(RwLock::new(people));
 
     let app = Router::new()
         .route("/pessoas", get(search_people))
@@ -73,7 +73,7 @@ async fn find_people(
     State(people): State<AppState>, 
     Path(person_id): Path<Uuid>
 ) -> impl IntoResponse {
-    match people.lock().await.get(&person_id) {
+    match people.read().await.get(&person_id) {
         Some(person) => Ok(Json(person.clone())),
         None => Err(StatusCode::NOT_FOUND),
     }
@@ -93,7 +93,7 @@ async fn create_people(
         stack: new_person.stack
     };
 
-    people.lock().await.insert(id, person.clone());
+    people.write().await.insert(id, person.clone());
 
     println!("{}", id);
 
@@ -103,6 +103,6 @@ async fn create_people(
 async fn count_people(
     State(people): State<AppState>, 
 ) -> impl IntoResponse {
-    let count = people.lock().await.len();
+    let count = people.read().await.len();
     (StatusCode::OK, Json(count))
 }
