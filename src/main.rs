@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, routing::{get, post}, Json, Router};
-use serde::{Deserialize, Serialize};
+use serde::{de::value, Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use time::{macros::date, Date};
@@ -23,12 +23,63 @@ pub struct Person {
 #[derive(Clone, Deserialize)]
 pub struct NewPerson {
     #[serde(rename = "nome")]
-    pub name: String,
+    pub name: PersonName,
     #[serde(rename = "apelido")]
-    pub nick: String,
+    pub nick: PersonNick,
     #[serde(rename = "nascimento", with = "date_format")]
     pub birth_date: Date,
-    pub stack: Option<Vec<String>>,
+    pub stack: Option<Vec<PersonTech>>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct PersonName(String);
+impl TryFrom<String> for PersonName {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 100 {
+            Ok(PersonName(value))
+        } else {
+            Err("name is too big")
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct PersonNick(String);
+impl TryFrom<String> for PersonNick {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 32 {
+            Ok(PersonNick(value))
+        } else {
+            Err("nick is too big")
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct PersonTech(String);
+impl TryFrom<String> for PersonTech {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 32 {
+            Ok(PersonTech(value))
+        } else {
+            Err("tech name is too big")
+        }
+    }
+}
+
+impl From<PersonTech> for String {
+    fn from(value: PersonTech) -> Self {
+        value.0
+    }
 }
 
 type AppState = Arc<RwLock<HashMap<Uuid, Person>>>;
@@ -64,9 +115,8 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn search_people() -> impl IntoResponse { 
-    // let State(people) = state;   
-    (StatusCode::OK, "Busca pessoas");
+async fn search_people() -> impl IntoResponse {
+    (StatusCode::OK, "Busca pessoas")
 }
 
 async fn find_people(
@@ -87,17 +137,19 @@ async fn create_people(
 
     let person = Person {
         id,
-        name: new_person.name,
-        nick: new_person.nick,
+        name: new_person.name.0,
+        nick: new_person.nick.0,
         birth_date: new_person.birth_date,
-        stack: new_person.stack
+        stack: new_person.
+            stack
+            .map(|stack| stack.into_iter().map(String::from).collect()),
     };
 
     people.write().await.insert(id, person.clone());
 
     println!("{}", id);
 
-    (StatusCode::OK, Json(person))
+    (StatusCode::CREATED, Json(person))
 }
 
 async fn count_people(
